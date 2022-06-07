@@ -1,0 +1,450 @@
+
+When we are planning for Exception handling in a proper way so 
+that we dont have to write exception handling code with multiple
+exception blocks and we dont want to keep exception handling with
+other classes which are designed for some other task.
+
+1) Using @RestControllerAdvice
+2) Using ResponseStatusException class
+
+
+
+@ExceptionHandler( { Exception.class, InfyBankException.class })
+	public ResponseEntity<String> exceptionHandler(Exception ex){
+	 if(ex instanceof Exception){
+           return new ResponseEntity<>(environment.getProperty("General.EXCEPTION_MESSAGE"),                           HttpStatus.INTERNAL_SERVER_ERROR);
+           }
+
+        else if(ex instanceof InfyBankException)
+      {
+        return new ResponseEntity<>(environment.getProperty(exception.getMessage()), HttpStatus.NOT_FOUND);
+    }
+
+}	
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------
+package com.infy;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class Demo01SpringRestExceptionHandlingApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(Demo01SpringRestExceptionHandlingApplication.class, args);
+	}
+
+}
+--------------------------------------------------------------------------------------------
+
+package com.infy.api;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.infy.dto.CustomerDTO;
+import com.infy.exception.InfyBankException;
+import com.infy.service.CustomerService;
+
+
+// http://localhost:8080/infybank
+@RestController
+@RequestMapping(value = "/infybank")
+public class CustomerAPI {
+
+	@Autowired
+	private CustomerService customerService;
+
+	@Autowired
+	private Environment environment;
+//       http://localhost:8080/infybank/customers
+	@GetMapping(value = "/customers")
+	public ResponseEntity<List<CustomerDTO>> getAllCustomers() throws InfyBankException {
+		List<CustomerDTO> customerDTOs = customerService.getAllCustomers();
+		return new ResponseEntity<>(customerDTOs, HttpStatus.OK);
+	}
+
+//  http://localhost:8080/infybank/customers/1
+// http://localhost:8080/infybank/customers/11
+
+	@GetMapping(value = "/customers/{customerId}")
+	public ResponseEntity<CustomerDTO> getCustomer(@PathVariable Integer customerId) throws InfyBankException {
+		CustomerDTO customerDTO = customerService.getCustomer(customerId);
+		return new ResponseEntity<>(customerDTO, HttpStatus.OK);
+	}
+//  http://localhost:8080/infybank/addcustomers
+	@PostMapping(value = "/addcustomers")
+	public ResponseEntity<String> addCustomer(@RequestBody CustomerDTO customerDTO) throws InfyBankException {
+		Integer customerId = customerService.addCustomer(customerDTO);
+		String successMessage = environment.getProperty("API.INSERT_SUCCESS") + customerId;
+		return new ResponseEntity<>(successMessage, HttpStatus.CREATED);
+	}
+//  http://localhost:8080/infybank/updatecustomers/1
+	@PutMapping(value = "/uodatecustomers/{customerId}")
+	public ResponseEntity<String> updateCustomer(@PathVariable Integer customerId, @RequestBody CustomerDTO customer)
+			throws InfyBankException {
+		customerService.updateCustomer(customerId, customer.getEmailId());
+		String successMessage = environment.getProperty("API.UPDATE_SUCCESS");
+		return new ResponseEntity<>(successMessage, HttpStatus.OK);
+	}
+
+	@DeleteMapping(value = "/customers/{customerId}")
+	public ResponseEntity<String> deleteCustomer(@PathVariable Integer customerId) throws InfyBankException {
+		customerService.deleteCustomer(customerId);
+		String successMessage = environment.getProperty("API.DELETE_SUCCESS");
+		return new ResponseEntity<>(successMessage, HttpStatus.OK);
+	}
+}
+------------------------------------------------------------------------------------
+
+package com.infy.utility;
+
+import java.time.LocalDateTime;
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import com.infy.exception.InfyBankException;
+
+@RestControllerAdvice
+public class ExceptionControllerAdvice {
+	@Autowired
+	Environment environment;
+
+	@ExceptionHandler(Exception.class)
+	public ResponseEntity<ErrorInfo> exceptionHandler(Exception exception) {
+		ErrorInfo error = new ErrorInfo();
+		error.setErrorMessage(environment.getProperty("General.EXCEPTION_MESSAGE"));
+		error.setErrorCode(HttpStatus.INTERNAL_SERVER_ERROR.value());
+		error.setTimestamp(LocalDateTime.now());
+		return new ResponseEntity<ErrorInfo>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+	}
+
+	@ExceptionHandler(InfyBankException.class)
+	public ResponseEntity<ErrorInfo> infyBankExceptionHandler(InfyBankException exception) {
+		ErrorInfo error = new ErrorInfo();
+		error.setErrorMessage(environment.getProperty(exception.getMessage()));
+		error.setTimestamp(LocalDateTime.now());
+		error.setErrorCode(HttpStatus.NOT_FOUND.value());
+		return new ResponseEntity<ErrorInfo>(error, HttpStatus.NOT_FOUND);
+	}
+	
+}
+---------------------------------------------------------------------------------------
+package com.infy.utility;
+
+import java.time.LocalDateTime;
+
+public class ErrorInfo {
+	private String errorMessage;
+	private Integer errorCode;
+	private LocalDateTime timestamp;
+
+	public String getErrorMessage() {
+		return errorMessage;
+	}
+
+	public void setErrorMessage(String errorMessage) {
+		this.errorMessage = errorMessage;
+	}
+
+	public Integer getErrorCode() {
+		return errorCode;
+	}
+
+	public void setErrorCode(Integer errorCode) {
+		this.errorCode = errorCode;
+	}
+
+	public LocalDateTime getTimestamp() {
+		return timestamp;
+	}
+
+	public void setTimestamp(LocalDateTime timestamp) {
+		this.timestamp = timestamp;
+	}
+
+}
+--------------------
+package com.infy.service;
+
+import java.util.ArrayList;
+
+import java.util.List;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.infy.exception.InfyBankException;
+import com.infy.repository.CustomerRepository;
+import com.infy.entity.Customer;
+
+import com.infy.dto.CustomerDTO;
+
+@Service(value = "customerService")
+@Transactional
+public class CustomerServiceImpl implements CustomerService {
+
+	@Autowired
+	private CustomerRepository customerRepository;
+
+	@Override
+	public CustomerDTO getCustomer(Integer customerId) throws InfyBankException {
+		Optional<Customer> optional = customerRepository.findById(customerId);
+		Customer customer = optional.orElseThrow(() -> new InfyBankException("Service.CUSTOMER_NOT_FOUND"));
+		CustomerDTO customer2 = new CustomerDTO();
+		customer2.setCustomerId(customer.getCustomerId());
+		customer2.setDateOfBirth(customer.getDateOfBirth());
+		customer2.setEmailId(customer.getEmailId());
+		customer2.setName(customer.getName());
+		return customer2;
+	}
+
+	@Override
+	public Integer addCustomer(CustomerDTO customerDTO) throws InfyBankException {
+		Customer customerEntity = new Customer();
+		customerEntity.setDateOfBirth(customerDTO.getDateOfBirth());
+		customerEntity.setEmailId(customerDTO.getEmailId());
+		customerEntity.setName(customerDTO.getName());
+		customerEntity.setCustomerId(customerDTO.getCustomerId());
+		Customer customerEntity2 = customerRepository.save(customerEntity);
+		return customerEntity2.getCustomerId();
+	}
+
+	@Override
+	public void updateCustomer(Integer customerId, String emailId) throws InfyBankException {
+		Optional<Customer> customer = customerRepository.findById(customerId);
+		Customer c = customer.orElseThrow(() -> new InfyBankException("Service.CUSTOMER_NOT_FOUND"));
+		c.setEmailId(emailId);
+	}
+
+	@Override
+	public void deleteCustomer(Integer customerId) throws InfyBankException {
+		Optional<Customer> customer = customerRepository.findById(customerId);
+		customer.orElseThrow(() -> new InfyBankException("Service.CUSTOMER_NOT_FOUND"));
+		customerRepository.deleteById(customerId);
+	}
+
+	@Override
+	public List<CustomerDTO> getAllCustomers() throws InfyBankException {
+		Iterable<Customer> customers = customerRepository.findAll();
+		List<CustomerDTO> customerDTOs = new ArrayList<>();
+		customers.forEach(customer -> {
+			CustomerDTO cust = new CustomerDTO();
+			cust.setCustomerId(customer.getCustomerId());
+			cust.setDateOfBirth(customer.getDateOfBirth());
+			cust.setEmailId(customer.getEmailId());
+			cust.setName(customer.getName());
+			customerDTOs.add(cust);
+		});
+		if (customerDTOs.isEmpty())
+			throw new InfyBankException("Service.CUSTOMERS_NOT_FOUND");
+		return customerDTOs;
+	}
+
+}
+-----------------------------------------------------------------------------------
+application.properties
+
+Service.CUSTOMER_NOT_FOUND=No customer found with given customer id.
+Service.CUSTOMERS_NOT_FOUND=No customers found. 
+General.EXCEPTION_MESSAGE=Request could not be processed due to some issue. Please try again!
+
+API.INSERT_SUCCESS=Customer added successfully with customer id : 
+API.UPDATE_SUCCESS=Customer emailid successfully updated.
+API.DELETE_SUCCESS=Customer details deleted successfully.
+# MySQL settings
+#Change these settings according to database you are using
+spring.datasource.url=jdbc:mysql://localhost:3306/customer_db
+spring.datasource.username=root
+
+#If MySQL installation is password proctored,then use below property to set password
+spring.datasource.password=Pranesh@123
+
+#JPA settings
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+server.port=8765
+----------------------------------------------------------------------------------------------
+Revise the following
+
+@RestControllerAdvice
+@ExceptionHandler(InfyBankException.class)
+   public ResponseEntity<ErrorInfo> errorHandler(InfyBankException exception){
+      ErrorInfo error=new ErrorInfo();
+      error.setErrorMessage(environment.getProperty(exception.getMessage()));
+      error.setTimestamp(LocalDateTime.now());
+      error.setErrorCode(HttpStatus.NOT_FOUND.value());
+      return new ResponseEnity<ErrorInfo>(error,HttpStatus.NOT_FOUND);
+   }
+
+
+public class ErrorInfo {
+	private String errorMessage;
+	private Integer errorCode;
+	private LocalDateTime timestamp;
+}
+-----------------------------------------------------------------------------------------------------------
+java.lang.Object
+     java.lang.Throwable
+                java.lang.Exception
+                      org.springframework.validation.BindException
+                                   org.springframework.web.bind.MethodArgumentNotValidException
+
+
+public class MethodArgumentNotValidException extends BindException
+
+
+Exception to be thrown when validation on an argument annotated with @Valid fails.
+
+
+The below  method we can access from MethodArgumentNotValidException
+ BindingResult getBindingResult()
+Return the BindingResult that this BindException wraps.
+
+The BindingResult in turn returns a List of Field error
+List<FieldError> getFieldErrors()
+Get all errors associated with a field.
+Returns:
+a List of FieldError instances
+
+
+
+The FieldError in turn is having the method getDefaultMessage() which returns the error message as a String
+String fieldError.getDefaultMessage()
+
+
+{
+    "emailId": "Suresh",
+    "name" : "Suresh",
+    "dateOfBirth": "2020-12-01",
+    "addressDTO" :
+    {
+        "addressId" : 1,
+        "street" : null,
+         "city" : null
+    }
+
+}
+
+
+
+{
+    "emailId": "Suresh@gmail.com",
+    "name" : "Suresh",
+    "dateOfBirth": "2020-12-01",
+    "addressDTO" :
+    {
+        "addressId" : 1,
+        "street" : "JawaharNagar",
+         "city" : "Delhi"
+    }
+
+}
+
+
+
+----------------------
+java.lang.Object
+java.lang.Throwable
+java.lang.Exception
+java.lang.RuntimeException
+javax.validation.ValidationException
+javax.validation.ConstraintViolationException
+Reports the result of constraint violations.
+
+public Set<ConstraintViolation<?>> getConstraintViolations()
+
+Describes a constraint violation. This object exposes the constraint violation context as well as the message 
+describing the violation.
+----------------------------------------------------------------------------------------------------
+package com.infy.security;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	// authentication
+	@Override
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.inMemoryAuthentication().withUser("smith").password(passwordEncoder().encode("smith123")).roles("ADMIN")
+		.and().withUser("tim").password(passwordEncoder().encode("tim123")).roles("USER");	}
+
+	// authorization
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+
+		http.authorizeRequests().antMatchers("/infybank/customers/**").hasRole("ADMIN").anyRequest().authenticated()
+				.and().httpBasic();
+		http.csrf().disable();
+	}
+
+	@Bean
+	PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
+
+}
+---------------------------------------------------------------------------------------------------------------https://www.synopsys.com/glossary/what-is-csrf.html#:~:text=Definition,has%20in%20an%20authenticated%20user.
+---------------------------------------------------------------------------------------------------------------*Why Service Layer?
+*Why Persistence Layer?
+*Why REST API?
+*What is DI?
+*What is IOC?
+*What are different IOC container?
+*What are the various ways of configuring beans?
+*What are beans in Spring?
+*What is autowiring?
+*What is AOP?
+*What is ORM?
+*What is JPQL?
+*What is Spring Data?
+*What difference we find with Spring JPA implementation with ORM tool and Spring DATA?
+*What are the different types of Relationships?
+*How we generate primary key?
+*What is pagination and sorting in Spring Data?
+*What is RESTful API?
+*What is HTTP and HTTP methods?
+*How validation can be applied in RESTful API?
+*How exception handling can be maintained in a single/centralised code?
+*How basic security can be implemented?
+*Testing the Service Layer.
+
+
+
+
